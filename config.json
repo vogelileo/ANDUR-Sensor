@@ -1,0 +1,100 @@
+{
+  "debug_logging": false,
+  "wifi": {
+    "enabled": true,
+    "ssid": "PicoSensor",
+    "password": "picosensor123",
+    "channel": 6
+  },
+  "web_server": {
+    "enabled": true,
+    "port": 80
+  },
+  "sensors": [
+    {
+      "id": "microwave_sensor_1",
+      "type": "microwave",
+      "update_interval": 0.1,
+      "buffer_size": 100,
+      "pin_i": 26,
+      "pin_q": 27,
+      "sample_count": 128,
+      "power_pin": 25,
+      "warmup_ms": 100,
+      "target_sample_rate_hz": 40000,
+      "min_sample_rate_hz": 35000,
+      "enabled": true
+    }
+  ],
+  "algorithms": [
+    {
+      "id": "microwave_high_sensitivity",
+      "type": "microwave_detection",
+      "sensor_id": "microwave_sensor_1",
+      "check_interval": 0.2,
+      "params": {
+        "use_fft": true,
+        "fft_threshold_mult": 4.0,
+        "threshold": 125.0,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "id": "microwave_balanced",
+      "type": "microwave_detection",
+      "sensor_id": "microwave_sensor_1",
+      "check_interval": 0.2,
+      "params": {
+        "use_fft": true,
+        "fft_threshold_mult": 5.0,
+        "threshold": 150.0,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "id": "adaptive_indoor",
+      "type": "adaptive_threshold",
+      "sensor_id": "microwave_sensor_1",
+      "check_interval": 0.2,
+      "params": {
+        "initial_baseline": 1000.0,
+        "threshold_margin": 500.0,
+        "adaptation_rate": 0.05,
+        "streak_required": 3
+      },
+      "enabled": true
+    },
+    {
+      "id": "energy_robust",
+      "type": "energy_hysteresis",
+      "sensor_id": "microwave_sensor_1",
+      "check_interval": 0.2,
+      "params": {
+        "activation_threshold": 3000.0,
+        "confirmation_threshold": 4500.0,
+        "deactivation_threshold": 2000.0,
+        "confirmation_samples": 6,
+        "cooldown_samples": 8
+      },
+      "enabled": true
+    }
+  ],
+  "lora": {
+    "spi_id": 0,
+    "cs_pin": 5,
+    "reset_pin": 6,
+    "frequency": 868000000
+  },
+  "i2c": {
+    "id": 0,
+    "scl_pin": 1,
+    "sda_pin": 0,
+    "freq": 400000
+  }
+}
