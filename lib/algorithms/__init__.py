@@ -9,6 +9,7 @@ Available Algorithms:
 - MicrowaveDetectionAlgorithm: FFT-based threshold + streak detection for microwave sensors
 - AdaptiveThresholdAlgorithm: Adaptive baseline with dynamic threshold adjustment
 - EnergyHysteresisAlgorithm: Energy-based detection with hysteresis state machine
+- MagnetometerDetectionAlgorithm: Magnetic field disturbance detection for vehicle/metal detection
 """
 
 
@@ -16,12 +17,14 @@ from algorithms.random_algorithm import RandomAlgorithm
 from algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
 from algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
 from algorithms.energy_hysteresis_algorithm import EnergyHysteresisAlgorithm
+from algorithms.magnetometer_detection_algorithm import MagnetometerDetectionAlgorithm
 
 __all__ = [
     'RandomAlgorithm',
     'MicrowaveDetectionAlgorithm',
     'AdaptiveThresholdAlgorithm',
-    'EnergyHysteresisAlgorithm'
+    'EnergyHysteresisAlgorithm',
+    'MagnetometerDetectionAlgorithm'
 ]
 
 # Made with Bob

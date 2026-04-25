@@ -161,8 +161,6 @@ class RM3100Sensor(BaseSensor):
                 'raw_samples': {'x': raw_x, 'y': raw_y, 'z': raw_z}
             }
         """
-        print(f"[{self.sensor_id}] Starting RM3100 reading cycle...")
-        
         safe_result = {
             'value': 0.0,
             'x': 0.0,
@@ -173,7 +171,6 @@ class RM3100Sensor(BaseSensor):
 
         try:
             # Trigger single-shot conversion for all 3 axes
-            print(f"[{self.sensor_id}] Triggering single-shot measurement...")
             async with self.i2c_lock:
                 self.i2c.writeto_mem(self.i2c_addr, self.REG_POLL, bytes([self.POLL_XYZ]))
 
@@ -181,24 +178,20 @@ class RM3100Sensor(BaseSensor):
             await asyncio.sleep(self.MEASUREMENT_DELAY_S)
 
             # Wait for data ready status
-            print(f"[{self.sensor_id}] Waiting for data ready status...")
             data_ready = False
             for retry in range(self.STATUS_RETRY_COUNT):
                 async with self.i2c_lock:
                     status = self.i2c.readfrom_mem(self.i2c_addr, self.REG_STATUS, 1)[0]
                 if status & self.STATUS_DRDY:
                     data_ready = True
-                    print(f"[{self.sensor_id}] Data ready (status=0x{status:02X})")
                     break
-                print(f"[{self.sensor_id}] Data not ready, retry {retry + 1}/{self.STATUS_RETRY_COUNT} (status=0x{status:02X})")
                 await asyncio.sleep(self.STATUS_RETRY_DELAY_S)
 
             if not data_ready:
-                print(f"[{self.sensor_id}] ERROR: RM3100 data not ready after {self.STATUS_RETRY_COUNT} retries, returning safe defaults")
+                print(f"[{self.sensor_id}] ERROR: RM3100 data not ready after {self.STATUS_RETRY_COUNT} retries")
                 return safe_result
 
             # Read raw magnetic field data
-            print(f"[{self.sensor_id}] Reading raw magnetic field data...")
             async with self.i2c_lock:
                 raw_block = self.i2c.readfrom_mem(self.i2c_addr, self.REG_MX, 9)
 
@@ -206,16 +199,12 @@ class RM3100Sensor(BaseSensor):
             raw_x = self._convert_24bit_signed(raw_block[0], raw_block[1], raw_block[2])
             raw_y = self._convert_24bit_signed(raw_block[3], raw_block[4], raw_block[5])
             raw_z = self._convert_24bit_signed(raw_block[6], raw_block[7], raw_block[8])
-            
-            print(f"[{self.sensor_id}] Raw counts: x={raw_x}, y={raw_y}, z={raw_z}")
 
             # Convert to microTeslas
             x_uT = raw_x / self.sensitivity_factor
             y_uT = raw_y / self.sensitivity_factor
             z_uT = raw_z / self.sensitivity_factor
             magnitude = math.sqrt((x_uT * x_uT) + (y_uT * y_uT) + (z_uT * z_uT))
-
-            print(f"[{self.sensor_id}] Converted: x={x_uT:.2f}µT, y={y_uT:.2f}µT, z={z_uT:.2f}µT, magnitude={magnitude:.2f}µT")
 
             result = {
                 'value': round(magnitude, 2),
@@ -229,7 +218,6 @@ class RM3100Sensor(BaseSensor):
                 }
             }
             
-            print(f"[{self.sensor_id}] Reading complete, returning magnitude={result['value']}µT")
             return result
 
         except Exception as e:

@@ -23,8 +23,8 @@
       "id": "magnetometer_1",
       "type": "magnetometer",
       "mac_address": "B7C8D9",
-      "update_interval": 0.05,
-      "buffer_size": 100,
+      "update_interval": 0.025,
+      "buffer_size": 300,
       "i2c_address": "0x20",
       "spi_mode_pin": 9,
       "enabled": true
@@ -32,16 +32,118 @@
   ],
   "algorithms": [
     {
-      "id": "magnetometer_random",
-      "type": "random",
+      "id": "mag_detect_magnitude_medium",
+      "type": "magnetometer_detection",
       "sensor_id": "magnetometer_1",
-      "check_interval": 0.2,
+      "check_interval": 0.1,
+      "enabled": false,
       "params": {
-        "min_value": 0,
-        "max_value": 10000,
-        "trigger_probability": 1.0
-      },
-      "enabled": true
+        "initial_baseline": 0.0,
+        "deviation_threshold": 500.0,
+        "gradient_threshold": 300.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": true
+      }
+    },
+    {
+      "id": "mag_detect_magnitude_high",
+      "type": "magnetometer_detection",
+      "sensor_id": "magnetometer_1",
+      "check_interval": 0.1,
+      "enabled": true,
+      "params": {
+        "initial_baseline": 0.0,
+        "deviation_threshold": 200.0,
+        "gradient_threshold": 150.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": true
+      }
+    },
+    {
+      "id": "mag_detect_magnitude_very_high",
+      "type": "magnetometer_detection",
+      "sensor_id": "magnetometer_1",
+      "check_interval": 0.1,
+      "enabled": false,
+      "params": {
+        "initial_baseline": 0.0,
+        "deviation_threshold": 100.0,
+        "gradient_threshold": 75.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": true
+      }
+    },
+    {
+      "id": "mag_detect_axis_medium",
+      "type": "magnetometer_detection",
+      "sensor_id": "magnetometer_1",
+      "check_interval": 0.1,
+      "enabled": false,
+      "params": {
+        "initial_baseline": 0.0,
+        "deviation_threshold": 500.0,
+        "gradient_threshold": 300.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": false
+      }
+    },
+    {
+      "id": "mag_detect_axis_high",
+      "type": "magnetometer_detection",
+      "sensor_id": "magnetometer_1",
+      "check_interval": 0.1,
+      "enabled": true,
+      "params": {
+        "initial_baseline": 0.0,
+        "deviation_threshold": 200.0,
+        "gradient_threshold": 150.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": false
+      }
+    },
+    {
+      "id": "mag_detect_axis_very_high",
+      "type": "magnetometer_detection",
+      "sensor_id": "magnetometer_1",
+      "check_interval": 0.1,
+      "enabled": false,
+      "params": {
+        "initial_baseline": 0.0,
+        "deviation_threshold": 100.0,
+        "gradient_threshold": 75.0,
+        "adaptation_rate": 0.05,
+        "baseline_window_size": 20,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0,
+        "baseline_update_delay": 5.0,
+        "use_magnitude": false
+      }
     }
   ],
   "lora": {

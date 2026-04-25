@@ -26,14 +26,15 @@ from lib.algorithms.random_algorithm import RandomAlgorithm
 from lib.algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
 from lib.algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
 from lib.algorithms.energy_hysteresis_algorithm import EnergyHysteresisAlgorithm
+from lib.algorithms.magnetometer_detection_algorithm import MagnetometerDetectionAlgorithm
 from lib.communication.lora_interface import LoRaInterface
 from config_loader import load_config
+from lib.utils.system_monitor import get_monitor
 
 # WiFi and web server imports (only for Pico W)
 try:
     import network
     from web_server import WebServer
-    from lib.utils.system_monitor import get_monitor
     WIFI_AVAILABLE = True
 except ImportError:
     WIFI_AVAILABLE = False
@@ -243,6 +244,7 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
         i2c_addr = int(sensor_config.get("i2c_address", "0x20"), 16)
         cycle_count = sensor_config.get("cycle_count", 200)
         sensitivity_factor = sensor_config.get("sensitivity_factor", 75.0)
+        spi_mode_pin = sensor_config.get("spi_mode_pin")
         return RM3100Sensor(
             sensor_id=sensor_id,
             data_store=data_store,
@@ -252,6 +254,7 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
             i2c_addr=i2c_addr,
             cycle_count=cycle_count,
             sensitivity_factor=sensitivity_factor,
+            spi_mode_pin=spi_mode_pin,
             monitor=monitor
         )
     else:
@@ -359,6 +362,18 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             monitor=monitor,
             installed_sensors=installed_sensors
         )
+    elif algo_type == "magnetometer_detection":
+        return MagnetometerDetectionAlgorithm(
+            algo_id=algo_id,
+            sensor_id=sensor_id,
+            data_store=data_store,
+            lora_interface=lora_interface,
+            check_interval=check_interval,
+            params=params,
+            sensor_mac=sensor_mac,
+            monitor=monitor,
+            installed_sensors=installed_sensors
+        )
     else:
         raise ValueError("Unknown algorithm type: {}".format(algo_type))
 
@@ -431,6 +446,16 @@ async def main():
             else:
                 print("[Main] WiFi AP failed - continuing without web server")
         
+        # Pre-configure magnetometer SPI mode pin(s) before I2C init
+        for sensor_config in config["sensors"]:
+            if sensor_config.get("enabled", True) and sensor_config.get("type") == "magnetometer":
+                spi_mode_pin = sensor_config.get("spi_mode_pin")
+                if spi_mode_pin is not None:
+                    Pin(spi_mode_pin, Pin.OUT, value=1)
+                    print("[Main] Set GP{} HIGH for RM3100 I2C mode before I2C init".format(spi_mode_pin))
+
+        time.sleep(0.01)
+
         # Initialize I2C bus
         print("\n[Main] Initializing I2C bus...")
         i2c_config = config["i2c"]

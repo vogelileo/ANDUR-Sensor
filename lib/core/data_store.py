@@ -43,12 +43,13 @@ class DataStore:
             buffer_size: Maximum number of frames in the pool
         """
         self.sensors[sensor_id] = {
-            'frames': [],  # Pool of frame objects
+            'frames': [None] * buffer_size,  # Pre-allocated ring buffer slots
             'buffer_size': buffer_size,
             'write_index': 0,  # Next frame to write
             'frame_sequence': 0,  # Monotonic frame counter
             'consumers': {},  # {consumer_id: last_consumed_sequence}
-            'is_full': False
+            'is_full': False,
+            'count': 0  # Number of valid frames currently stored
         }
         print(f"[DataStore] Registered sensor '{sensor_id}' with frame pool size {buffer_size}")
     
@@ -107,30 +108,30 @@ class DataStore:
                 'consumed_by': set()  # Track which consumers have processed this
             }
             
-            # If pool not full, append new frame
-            if not sensor['is_full']:
-                debug_print("[DATASTORE]", f"[{sensor_id}] Pool not full, appending frame {sequence}")
-                sensor['frames'].append(frame)
-                
-                if len(sensor['frames']) >= sensor['buffer_size']:
-                    sensor['is_full'] = True
-                    sensor['write_index'] = 0
-                    debug_print("[DATASTORE]", f"[{sensor_id}] Pool now full, switching to reuse mode")
-            else:
-                # Reuse oldest frame slot (ring buffer semantics)
-                idx = sensor['write_index']
-                old_frame = sensor['frames'][idx]
+            # Write into pre-allocated ring buffer slot
+            idx = sensor['write_index']
+            old_frame = sensor['frames'][idx]
+            
+            if old_frame is not None:
                 debug_print("[DATASTORE]", f"[{sensor_id}] Reusing frame slot {idx} (was seq {old_frame['sequence']})")
                 
                 # Check if all consumers have processed the old frame
                 consumers = set(sensor['consumers'].keys())
                 unconsumed = consumers - old_frame['consumed_by']
                 if unconsumed:
-                    debug_print("[DATASTORE]", f"[{sensor_id}] WARNING: Frame {old_frame['sequence']} not consumed by: {unconsumed}")
-                
-                # Overwrite with new frame
-                sensor['frames'][idx] = frame
-                sensor['write_index'] = (sensor['write_index'] + 1) % sensor['buffer_size']
+                    debug_print("[DATASTORE]", f"[{sensor_id}] WARNING: Dropping unconsumed frame {old_frame['sequence']} for: {unconsumed}")
+            else:
+                debug_print("[DATASTORE]", f"[{sensor_id}] Filling empty frame slot {idx} with frame {sequence}")
+            
+            sensor['frames'][idx] = frame
+            
+            if sensor['count'] < sensor['buffer_size']:
+                sensor['count'] += 1
+                if sensor['count'] >= sensor['buffer_size']:
+                    sensor['is_full'] = True
+                    debug_print("[DATASTORE]", f"[{sensor_id}] Pool now full, ring buffer overwrite mode active")
+            
+            sensor['write_index'] = (idx + 1) % sensor['buffer_size']
             
             debug_print("[DATASTORE]", f"[{sensor_id}] ✓ Frame {sequence} added successfully")
     
@@ -157,14 +158,17 @@ class DataStore:
                 debug_print("[DATASTORE]", f"[{sensor_id}] Consumer '{consumer_id}' not registered")
                 return None
             
-            if not sensor['frames']:
+            if sensor['count'] == 0:
                 return None
             
             last_consumed = sensor['consumers'][consumer_id]
             
-            # Find oldest unconsumed frame
-            for frame in sensor['frames']:
-                if frame['sequence'] > last_consumed:
+            # Iterate oldest to newest through active ring buffer entries
+            start_idx = sensor['write_index'] if sensor['is_full'] else 0
+            for offset in range(sensor['count']):
+                idx = (start_idx + offset) % sensor['buffer_size']
+                frame = sensor['frames'][idx]
+                if frame is not None and frame['sequence'] > last_consumed:
                     debug_print("[DATASTORE]", f"[{sensor_id}] Consumer '{consumer_id}' fetching frame {frame['sequence']}")
                     return frame  # Return reference, not copy
             
@@ -194,7 +198,7 @@ class DataStore:
             
             # Mark frame as consumed by this consumer
             for frame in sensor['frames']:
-                if frame['sequence'] == sequence:
+                if frame is not None and frame['sequence'] == sequence:
                     frame['consumed_by'].add(consumer_id)
                     debug_print("[DATASTORE]", f"[{sensor_id}] Frame {sequence} released by '{consumer_id}'")
                     
@@ -222,11 +226,11 @@ class DataStore:
                 return None
             
             sensor = self.sensors[sensor_id]
-            if not sensor['frames']:
+            if sensor['count'] == 0:
                 return None
             
-            # Find frame with highest sequence
-            latest = max(sensor['frames'], key=lambda f: f['sequence'])
+            # Find frame with highest sequence among active entries
+            latest = max((f for f in sensor['frames'] if f is not None), key=lambda f: f['sequence'])
             return {
                 'timestamp': latest['timestamp'],
                 'value': latest['value']
@@ -251,11 +255,11 @@ class DataStore:
                 return []
             
             sensor = self.sensors[sensor_id]
-            if not sensor['frames']:
+            if sensor['count'] == 0:
                 return []
             
-            # Sort frames by sequence and take last N
-            sorted_frames = sorted(sensor['frames'], key=lambda f: f['sequence'])
+            # Sort active frames by sequence and take last N
+            sorted_frames = sorted((f for f in sensor['frames'] if f is not None), key=lambda f: f['sequence'])
             recent = sorted_frames[-count:] if count < len(sorted_frames) else sorted_frames
             
             return [{'timestamp': f['timestamp'], 'value': f['value']} for f in recent]
