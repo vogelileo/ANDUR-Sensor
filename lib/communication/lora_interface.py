@@ -88,7 +88,8 @@ SENSOR_TYPE_MAP = {
     "pressure": 2,
     "humidity": 3,
     "microwave": 4,
-    "alibi": 5
+    "alibi": 5,
+    "gps_battery": 6
 }
 
 ALGO_TYPE_MAP = {
@@ -587,6 +588,9 @@ class LoRaInterface:
             raise ValueError("Invalid payload size: {} (expected {})".format(
                 len(binary_payload), TOTAL_PACKAGE_SIZE))
         
+        # Log hex representation of the packet
+        hex_str = binary_payload.hex().upper()
+        print("[LoRa] Sending packet: {}".format(hex_str))
         print("[LoRa] Transmitting {} bytes...".format(len(binary_payload)))
         
         try:

@@ -169,7 +169,7 @@ class BaseAlgorithm:
                             triggered = result and result.get('trigger', False)
                             if triggered:
                                 debug_print("[ALGO RUN]", "Trigger condition MET - sending LoRa message")
-                                await self._send_lora(result)
+                                await self._send_lora(result, data)
                             else:
                                 debug_print("[ALGO RUN]", "Trigger condition NOT met")
                             
@@ -197,12 +197,13 @@ class BaseAlgorithm:
             print(f"[{self.algo_id}] Fatal error in algorithm loop: {e}")
             raise
     
-    async def _send_lora(self, result):
+    async def _send_lora(self, result, data):
         """
         Send LoRa message with algorithm result.
         
         Args:
             result: dict from process() containing trigger data
+            data: dict with original sensor data (for extracting GPS/battery)
         """
         try:
             debug_print("[ALGO LORA]", f"Preparing LoRa message for {self.algo_id}")
@@ -240,14 +241,20 @@ class BaseAlgorithm:
                 print(f"[ALGO LORA] Using sensor_type='{sensor_type}', algo_id='{self.algo_id}'")
                 sensor_algo_enum = 0
             
+            # Always use global metadata for GPS and battery data
+            global_metadata = self.data_store.get_global_metadata()
+            gps_lat = global_metadata['gps_latitude']
+            gps_lon = global_metadata['gps_longitude']
+            battery = global_metadata['battery']
+            
             # Prepare DataPackage payload with required fields only
             # The LoRa interface expects specific DataPackage fields
             payload = {
                 'sensor_id': self.sensor_mac,  # Use MAC address for LoRa transmission
                 'value': clamped_value,
-                'gps_latitude': 0.0,  # Default values for now
-                'gps_longitude': 0.0,
-                'battery': 100,  # Default to full battery
+                'gps_latitude': gps_lat,
+                'gps_longitude': gps_lon,
+                'battery': battery,
                 'hops': 0,
                 'sensor_algo_enum': sensor_algo_enum,
                 'version': 1

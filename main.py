@@ -20,6 +20,7 @@ from machine import I2C, SPI, Pin
 from lib.core.data_store import DataStore
 from lib.sensors.alibi_sensor import AlibiSensor
 from lib.sensors.microwave_sensor import MicrowaveSensor
+from lib.sensors.gps_battery_sensor import GPSBatterySensor
 from lib.algorithms.random_algorithm import RandomAlgorithm
 from lib.algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
 from lib.algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
@@ -226,6 +227,15 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
             warmup_ms=warmup_ms,
             target_sample_rate_hz=target_sample_rate_hz,
             min_sample_rate_hz=min_sample_rate_hz,
+            monitor=monitor
+        )
+    elif sensor_type == "gps_battery":
+        # GPS and battery sensor with hardcoded values (no hardware needed)
+        return GPSBatterySensor(
+            sensor_id=sensor_id,
+            data_store=data_store,
+            update_interval=update_interval,
+            buffer_size=buffer_size,
             monitor=monitor
         )
     else:

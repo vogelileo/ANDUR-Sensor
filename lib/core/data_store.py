@@ -24,6 +24,11 @@ class DataStore:
         """Initialize the data store"""
         self.sensors = {}
         self.lock = asyncio.Lock()
+        
+        # Global metadata for GPS and battery (available to all algorithms)
+        self.gps_latitude = 0.0
+        self.gps_longitude = 0.0
+        self.battery = 100
     
     def register_sensor(self, sensor_id, buffer_size):
         """
@@ -265,6 +270,35 @@ class DataStore:
             return None
         
         sensor = self.sensors[sensor_id]
+    
+    def set_global_metadata(self, gps_lat, gps_lon, battery):
+        """
+        Update global GPS and battery metadata.
+        
+        This metadata is available to all algorithms and represents the
+        latest known GPS coordinates and battery level.
+        
+        Args:
+            gps_lat: GPS latitude (float)
+            gps_lon: GPS longitude (float)
+            battery: Battery level percentage (int)
+        """
+        self.gps_latitude = float(gps_lat)
+        self.gps_longitude = float(gps_lon)
+        self.battery = int(battery)
+    
+    def get_global_metadata(self):
+        """
+        Get current global GPS and battery metadata.
+        
+        Returns:
+            dict with keys: 'gps_latitude', 'gps_longitude', 'battery'
+        """
+        return {
+            'gps_latitude': self.gps_latitude,
+            'gps_longitude': self.gps_longitude,
+            'battery': self.battery
+        }
         return {
             'buffer_size': sensor['buffer_size'],
             'current_count': len(sensor['frames']),

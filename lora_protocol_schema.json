@@ -114,6 +114,9 @@
                         },
                         "alibi": {
                             "const": 5
+                        },
+                        "gps_battery": {
+                            "const": 6
                         }
                     }
                 },

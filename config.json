@@ -25,6 +25,14 @@
       "target_sample_rate_hz": 40000,
       "min_sample_rate_hz": 35000,
       "enabled": true
+    },
+    {
+      "id": "gps_battery_1",
+      "type": "gps_battery",
+      "mac_address": "D4E5F6",
+      "update_interval": 1.0,
+      "buffer_size": 100,
+      "enabled": true
     }
   ],
   "algorithms": [
