@@ -14,6 +14,7 @@
     {
       "id": "microwave_sensor_1",
       "type": "microwave",
+      "mac_address": "A1B2C3",
       "update_interval": 0.1,
       "buffer_size": 100,
       "pin_i": 26,
@@ -86,10 +87,21 @@
     }
   ],
   "lora": {
-    "spi_id": 0,
-    "cs_pin": 5,
-    "reset_pin": 6,
-    "frequency": 868000000
+    "spi_id": 1,
+    "sck_pin": 10,
+    "mosi_pin": 11,
+    "miso_pin": 12,
+    "cs_pin": 3,
+    "reset_pin": 15,
+    "busy_pin": 2,
+    "dio1_pin": 20,
+    "frequency": 868000000,
+    "spreading_factor": 9,
+    "bandwidth": 250000,
+    "coding_rate": 7,
+    "sync_word": "0x1212",
+    "preamble_length": 8,
+    "tx_power": 22
   },
   "i2c": {
     "id": 0,

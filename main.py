@@ -17,14 +17,14 @@ import gc
 import time
 from machine import I2C, SPI, Pin
 
-from core.data_store import DataStore
-from sensors.alibi_sensor import AlibiSensor
-from sensors.microwave_sensor import MicrowaveSensor
-from algorithms.random_algorithm import RandomAlgorithm
-from algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
-from algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
-from algorithms.energy_hysteresis_algorithm import EnergyHysteresisAlgorithm
-from communication.lora_interface import LoRaInterface
+from lib.core.data_store import DataStore
+from lib.sensors.alibi_sensor import AlibiSensor
+from lib.sensors.microwave_sensor import MicrowaveSensor
+from lib.algorithms.random_algorithm import RandomAlgorithm
+from lib.algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
+from lib.algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
+from lib.algorithms.energy_hysteresis_algorithm import EnergyHysteresisAlgorithm
+from lib.communication.lora_interface import LoRaInterface
 from config_loader import load_config
 
 # WiFi and web server imports (only for Pico W)
@@ -168,29 +168,31 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
     update_interval = sensor_config["update_interval"]
     buffer_size = sensor_config["buffer_size"]
     
-    if sensor_type == "magnetic":
-        i2c_addr = int(sensor_config["i2c_addr"], 16)  # Convert hex string to int
-        return MagneticSensor(
-            sensor_id=sensor_id,
-            data_store=data_store,
-            update_interval=update_interval,
-            buffer_size=buffer_size,
-            i2c_bus=i2c_bus,
-            i2c_addr=i2c_addr,
-            monitor=monitor
-        )
-    elif sensor_type == "temperature":
-        i2c_addr = int(sensor_config["i2c_addr"], 16)  # Convert hex string to int
-        return TemperatureSensor(
-            sensor_id=sensor_id,
-            data_store=data_store,
-            update_interval=update_interval,
-            buffer_size=buffer_size,
-            i2c_bus=i2c_bus,
-            i2c_addr=i2c_addr,
-            monitor=monitor
-        )
-    elif sensor_type == "alibi":
+    # Removed magnetic and temperature sensor types - classes don't exist
+    # if sensor_type == "magnetic":
+    #     i2c_addr = int(sensor_config["i2c_addr"], 16)  # Convert hex string to int
+    #     return MagneticSensor(
+    #         sensor_id=sensor_id,
+    #         data_store=data_store,
+    #         update_interval=update_interval,
+    #         buffer_size=buffer_size,
+    #         i2c_bus=i2c_bus,
+    #         i2c_addr=i2c_addr,
+    #         monitor=monitor
+    #     )
+    # elif sensor_type == "temperature":
+    #     i2c_addr = int(sensor_config["i2c_addr"], 16)  # Convert hex string to int
+    #     return TemperatureSensor(
+    #         sensor_id=sensor_id,
+    #         data_store=data_store,
+    #         update_interval=update_interval,
+    #         buffer_size=buffer_size,
+    #         i2c_bus=i2c_bus,
+    #         i2c_addr=i2c_addr,
+    #         monitor=monitor
+    #     )
+    
+    if sensor_type == "alibi":
         # Alibi sensor doesn't need I2C, get optional parameters
         base_value = sensor_config.get("base_value", 50.0)
         variation = sensor_config.get("variation", 10.0)
@@ -230,7 +232,7 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
         raise ValueError("Unknown sensor type: {}".format(sensor_type))
 
 
-def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
+def create_algorithm(algo_config, data_store, lora_interface, sensors_config, monitor=None):
     """
     Factory function to create algorithm instances based on configuration.
     
@@ -238,6 +240,7 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
         algo_config: dict with algorithm configuration
         data_store: DataStore instance
         lora_interface: LoRaInterface instance
+        sensors_config: list of sensor configurations to extract MAC addresses
         monitor: SystemMonitor instance for tracking
     
     Returns:
@@ -252,25 +255,34 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
     check_interval = algo_config["check_interval"]
     params = algo_config["params"]
     
-    if algo_type == "threshold":
-        return ThresholdDetector(
-            algo_id=algo_id,
-            sensor_id=sensor_id,
-            data_store=data_store,
-            lora_interface=lora_interface,
-            check_interval=check_interval,
-            params=params
-        )
-    elif algo_type == "moving_average":
-        return MovingAverage(
-            algo_id=algo_id,
-            sensor_id=sensor_id,
-            data_store=data_store,
-            lora_interface=lora_interface,
-            check_interval=check_interval,
-            params=params
-        )
-    elif algo_type == "random":
+    # Extract MAC address from sensor configuration
+    sensor_mac = None
+    for sensor_config in sensors_config:
+        if sensor_config["id"] == sensor_id:
+            sensor_mac = sensor_config.get("mac_address")
+            break
+    
+    # Removed threshold and moving_average algorithm types - classes don't exist
+    # if algo_type == "threshold":
+    #     return ThresholdDetector(
+    #         algo_id=algo_id,
+    #         sensor_id=sensor_id,
+    #         data_store=data_store,
+    #         lora_interface=lora_interface,
+    #         check_interval=check_interval,
+    #         params=params
+    #     )
+    # elif algo_type == "moving_average":
+    #     return MovingAverage(
+    #         algo_id=algo_id,
+    #         sensor_id=sensor_id,
+    #         data_store=data_store,
+    #         lora_interface=lora_interface,
+    #         check_interval=check_interval,
+    #         params=params
+    #     )
+    
+    if algo_type == "random":
         return RandomAlgorithm(
             algo_id=algo_id,
             sensor_id=sensor_id,
@@ -278,6 +290,7 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
             lora_interface=lora_interface,
             check_interval=check_interval,
             params=params,
+            sensor_mac=sensor_mac,
             monitor=monitor
         )
     elif algo_type == "microwave_detection":
@@ -288,6 +301,7 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
             lora_interface=lora_interface,
             check_interval=check_interval,
             params=params,
+            sensor_mac=sensor_mac,
             monitor=monitor
         )
     elif algo_type == "adaptive_threshold":
@@ -298,6 +312,7 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
             lora_interface=lora_interface,
             check_interval=check_interval,
             params=params,
+            sensor_mac=sensor_mac,
             monitor=monitor
         )
     elif algo_type == "energy_hysteresis":
@@ -308,6 +323,7 @@ def create_algorithm(algo_config, data_store, lora_interface, monitor=None):
             lora_interface=lora_interface,
             check_interval=check_interval,
             params=params,
+            sensor_mac=sensor_mac,
             monitor=monitor
         )
     else:
@@ -393,7 +409,7 @@ async def main():
             config=lora_config,
             monitor=monitor
         )
-        await lora_interface.initialize()
+        lora_interface.initialize()
         print("[Main] LoRa interface ready")
         
         # Create data store
@@ -436,7 +452,7 @@ async def main():
         for algo_config in config["algorithms"]:
             if algo_config.get("enabled", True):
                 try:
-                    algorithm = create_algorithm(algo_config, data_store, lora_interface, monitor)
+                    algorithm = create_algorithm(algo_config, data_store, lora_interface, config["sensors"], monitor)
                     algorithms.append(algorithm)
                     
                     # Register algorithm as consumer for shared frame access

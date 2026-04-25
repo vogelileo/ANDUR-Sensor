@@ -1,0 +1,361 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LoRa Protocol Schema",
+    "description": "Complete protocol definition for LoRa communication in the ANDUR Sensor System",
+    "version": "1.0.0",
+    "definitions": {
+        "DataPackage": {
+            "type": "object",
+            "description": "Complete LoRa data package structure",
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "description": "Protocol version",
+                    "minimum": 0,
+                    "maximum": 255,
+                    "byteSize": 1
+                },
+                "sensor_id": {
+                    "type": "string",
+                    "description": "Sensor MAC address (3 bytes)",
+                    "pattern": "^[0-9A-Fa-f]{6}$",
+                    "byteSize": 3
+                },
+                "gps_latitude": {
+                    "type": "number",
+                    "description": "GPS Latitude coordinate (4 bytes, IEEE 754 float)",
+                    "minimum": -90.0,
+                    "maximum": 90.0,
+                    "byteSize": 4
+                },
+                "gps_longitude": {
+                    "type": "number",
+                    "description": "GPS Longitude coordinate (4 bytes, IEEE 754 float)",
+                    "minimum": -180.0,
+                    "maximum": 180.0,
+                    "byteSize": 4
+                },
+                "battery": {
+                    "type": "integer",
+                    "description": "Battery level percentage (1 byte)",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "byteSize": 1
+                },
+                "hops": {
+                    "type": "integer",
+                    "description": "Number of network hops (1 byte)",
+                    "minimum": 0,
+                    "maximum": 255,
+                    "byteSize": 1
+                },
+                "sensor_algo_enum": {
+                    "type": "integer",
+                    "description": "Combined sensor/algorithm enumeration (1 byte). Upper nibble (bits 4-7) = sensor type ID, lower nibble (bits 0-3) = algorithm type ID. Values 0-15 reserved for control messages when used as single value.",
+                    "minimum": 0,
+                    "maximum": 255,
+                    "byteSize": 1,
+                    "encoding": "Upper 4 bits: sensor_id, Lower 4 bits: algo_id"
+                },
+                "value": {
+                    "type": "integer",
+                    "description": "Sensor reading or algorithm output value (1 byte)",
+                    "minimum": 0,
+                    "maximum": 255,
+                    "byteSize": 1
+                }
+            },
+            "required": [
+                "version",
+                "sensor_id",
+                "gps_latitude",
+                "gps_longitude",
+                "battery",
+                "hops",
+                "sensor_algo_enum",
+                "value"
+            ],
+            "totalByteSize": 16
+        },
+        "SensorAlgoEnum": {
+            "type": "object",
+            "description": "Enumeration mapping for sensor and algorithm types",
+            "properties": {
+                "control_range": {
+                    "type": "object",
+                    "description": "Reserved control message range (0-15)",
+                    "properties": {
+                        "min": {
+                            "const": 0
+                        },
+                        "max": {
+                            "const": 15
+                        }
+                    }
+                },
+                "sensor_types": {
+                    "type": "object",
+                    "description": "Sensor type identifiers",
+                    "properties": {
+                        "magnetic": {
+                            "const": 0
+                        },
+                        "temperature": {
+                            "const": 1
+                        },
+                        "pressure": {
+                            "const": 2
+                        },
+                        "humidity": {
+                            "const": 3
+                        },
+                        "microwave": {
+                            "const": 4
+                        },
+                        "alibi": {
+                            "const": 5
+                        }
+                    }
+                },
+                "algorithm_types": {
+                    "type": "object",
+                    "description": "Algorithm type identifiers",
+                    "properties": {
+                        "threshold": {
+                            "const": 0
+                        },
+                        "moving_average": {
+                            "const": 1
+                        },
+                        "peak_detector": {
+                            "const": 2
+                        },
+                        "anomaly": {
+                            "const": 3
+                        },
+                        "adaptive_threshold": {
+                            "const": 4
+                        },
+                        "energy_hysteresis": {
+                            "const": 5
+                        },
+                        "microwave_detection": {
+                            "const": 6
+                        },
+                        "random": {
+                            "const": 7
+                        }
+                    }
+                }
+            }
+        },
+        "PayloadMessage": {
+            "type": "object",
+            "description": "Internal payload structure used in Python code",
+            "properties": {
+                "algo_id": {
+                    "type": "string",
+                    "description": "Algorithm identifier (human-readable)",
+                    "examples": [
+                        "threshold",
+                        "moving_average",
+                        "peak_detector",
+                        "anomaly"
+                    ]
+                },
+                "sensor_id": {
+                    "type": "string",
+                    "description": "Sensor identifier (human-readable)",
+                    "examples": [
+                        "magnetic",
+                        "temperature",
+                        "pressure",
+                        "humidity"
+                    ]
+                },
+                "value": {
+                    "type": "integer",
+                    "description": "Sensor reading value",
+                    "minimum": 0,
+                    "maximum": 10000
+                },
+                "timestamp": {
+                    "type": "integer",
+                    "description": "Unix timestamp (seconds since epoch)",
+                    "minimum": 0
+                }
+            },
+            "required": [
+                "algo_id",
+                "sensor_id",
+                "value",
+                "timestamp"
+            ]
+        },
+        "BinaryPayload": {
+            "type": "object",
+            "description": "Compact 4-byte binary message format (legacy/simplified)",
+            "properties": {
+                "byte_0": {
+                    "type": "integer",
+                    "description": "Sensor type ID",
+                    "minimum": 0,
+                    "maximum": 255
+                },
+                "byte_1": {
+                    "type": "integer",
+                    "description": "Algorithm type ID",
+                    "minimum": 0,
+                    "maximum": 255
+                },
+                "byte_2": {
+                    "type": "integer",
+                    "description": "Value high byte",
+                    "minimum": 0,
+                    "maximum": 255
+                },
+                "byte_3": {
+                    "type": "integer",
+                    "description": "Value low byte",
+                    "minimum": 0,
+                    "maximum": 255
+                }
+            },
+            "totalByteSize": 4
+        },
+        "WebFormattedMessage": {
+            "type": "object",
+            "description": "Message format for web UI display",
+            "properties": {
+                "algo": {
+                    "type": "string",
+                    "description": "Algorithm identifier"
+                },
+                "sensor": {
+                    "type": "string",
+                    "description": "Sensor identifier"
+                },
+                "value": {
+                    "type": "integer",
+                    "description": "Sensor reading value"
+                },
+                "time": {
+                    "type": "integer",
+                    "description": "Unix timestamp"
+                },
+                "time_formatted": {
+                    "type": "string",
+                    "description": "Human-readable time string (HH:MM:SS)",
+                    "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
+                }
+            },
+            "required": [
+                "algo",
+                "sensor",
+                "value",
+                "time",
+                "time_formatted"
+            ]
+        }
+    },
+    "protocolInfo": {
+        "description": "LoRa Protocol for ANDUR Sensor System",
+        "totalPackageSize": 16,
+        "byteOrder": "big-endian",
+        "encoding": "binary",
+        "controlMessageRange": {
+            "min": 0,
+            "max": 15,
+            "description": "Values 0-15 in sensor_algo_enum are reserved for control messages"
+        }
+    },
+    "fieldMapping": {
+        "description": "Byte-level field mapping for the complete data package",
+        "fields": [
+            {
+                "name": "version",
+                "offset": 0,
+                "size": 1,
+                "type": "uint8"
+            },
+            {
+                "name": "sensor_id",
+                "offset": 1,
+                "size": 3,
+                "type": "bytes"
+            },
+            {
+                "name": "gps_latitude",
+                "offset": 4,
+                "size": 4,
+                "type": "float32"
+            },
+            {
+                "name": "gps_longitude",
+                "offset": 8,
+                "size": 4,
+                "type": "float32"
+            },
+            {
+                "name": "battery",
+                "offset": 12,
+                "size": 1,
+                "type": "uint8"
+            },
+            {
+                "name": "hops",
+                "offset": 13,
+                "size": 1,
+                "type": "uint8"
+            },
+            {
+                "name": "sensor_algo_enum",
+                "offset": 14,
+                "size": 1,
+                "type": "uint8"
+            },
+            {
+                "name": "value",
+                "offset": 15,
+                "size": 1,
+                "type": "uint8"
+            }
+        ]
+    },
+    "validationRules": {
+        "version": {
+            "rule": "Must be a single byte (0-255)",
+            "currentVersion": 1
+        },
+        "sensor_id": {
+            "rule": "Must be 3-byte MAC address representation",
+            "format": "hexadecimal"
+        },
+        "gps_coordinates": {
+            "rule": "Must be valid GPS coordinates",
+            "latitude_range": [
+                -90,
+                90
+            ],
+            "longitude_range": [
+                -180,
+                180
+            ]
+        },
+        "battery": {
+            "rule": "Percentage value 0-100",
+            "unit": "percent"
+        },
+        "hops": {
+            "rule": "Network hop count, 0-255",
+            "maxRecommended": 10
+        },
+        "sensor_algo_enum": {
+            "rule": "0-15 reserved for controls, 16+ for sensor/algo combinations"
+        },
+        "value": {
+            "rule": "Single byte value 0-255",
+            "interpretation": "Depends on sensor_algo_enum context"
+        }
+    }
+}
