@@ -12,6 +12,21 @@
   },
   "sensors": [
     {
+      "id": "microwave_sensor_1",
+      "type": "microwave",
+      "mac_address": "A1B2C3",
+      "update_interval": 0.1,
+      "buffer_size": 100,
+      "pin_i": 26,
+      "pin_q": 27,
+      "sample_count": 128,
+      "power_pin": 25,
+      "warmup_ms": 100,
+      "target_sample_rate_hz": 40000,
+      "min_sample_rate_hz": 35000,
+      "enabled": true
+    },
+    {
       "id": "gps_battery_1",
       "type": "gps_battery",
       "mac_address": "D4E5F6",
@@ -26,20 +41,37 @@
       "update_interval": 0.05,
       "buffer_size": 100,
       "i2c_address": "0x20",
-      "spi_mode_pin": 9,
       "enabled": true
     }
   ],
   "algorithms": [
     {
-      "id": "magnetometer_random",
-      "type": "random",
-      "sensor_id": "magnetometer_1",
+      "id": "microwave_high_sensitivity",
+      "type": "microwave_detection",
+      "sensor_id": "microwave_sensor_1",
       "check_interval": 0.2,
       "params": {
-        "min_value": 0,
-        "max_value": 10000,
-        "trigger_probability": 1.0
+        "use_fft": true,
+        "fft_threshold_mult": 4.0,
+        "threshold": 125.0,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "id": "microwave_balanced",
+      "type": "microwave_detection",
+      "sensor_id": "microwave_sensor_1",
+      "check_interval": 0.2,
+      "params": {
+        "use_fft": true,
+        "fft_threshold_mult": 5.0,
+        "threshold": 150.0,
+        "streak_required": 2,
+        "max_output": 10000,
+        "scale_factor": 1.0
       },
       "enabled": true
     }
@@ -65,8 +97,8 @@
   },
   "i2c": {
     "id": 0,
-    "scl_pin": 5,
-    "sda_pin": 4,
+    "scl_pin": 1,
+    "sda_pin": 0,
     "freq": 400000
   }
 }

@@ -21,6 +21,7 @@ from lib.core.data_store import DataStore
 from lib.sensors.alibi_sensor import AlibiSensor
 from lib.sensors.microwave_sensor import MicrowaveSensor
 from lib.sensors.gps_battery_sensor import GPSBatterySensor
+from lib.sensors.magnetometer_sensor import RM3100Sensor
 from lib.algorithms.random_algorithm import RandomAlgorithm
 from lib.algorithms.microwave_detection_algorithm import MicrowaveDetectionAlgorithm
 from lib.algorithms.adaptive_threshold_algorithm import AdaptiveThresholdAlgorithm
@@ -203,8 +204,7 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
             update_interval=update_interval,
             buffer_size=buffer_size,
             base_value=base_value,
-            variation=variation,
-            monitor=monitor
+            variation=variation
         )
     elif sensor_type == "microwave":
         # Microwave sensor uses ADC pins
@@ -236,6 +236,22 @@ def create_sensor(sensor_config, data_store, i2c_bus, monitor=None):
             data_store=data_store,
             update_interval=update_interval,
             buffer_size=buffer_size,
+            monitor=monitor
+        )
+    elif sensor_type == "magnetometer":
+        # RM3100 magnetometer sensor
+        i2c_addr = int(sensor_config.get("i2c_address", "0x20"), 16)
+        cycle_count = sensor_config.get("cycle_count", 200)
+        sensitivity_factor = sensor_config.get("sensitivity_factor", 75.0)
+        return RM3100Sensor(
+            sensor_id=sensor_id,
+            data_store=data_store,
+            update_interval=update_interval,
+            buffer_size=buffer_size,
+            i2c_bus=i2c_bus,
+            i2c_addr=i2c_addr,
+            cycle_count=cycle_count,
+            sensitivity_factor=sensitivity_factor,
             monitor=monitor
         )
     else:
@@ -396,7 +412,7 @@ async def main():
             for error in validation_errors:
                 print(f"[Main]   - {error}")
             print("[Main] Please update config.json with valid sensor types")
-            print("[Main] Valid types: microphone, bluetooth, audio, magnetometer, rfbeam, microwave, camera, seismic, alibi, gps_battery")
+            print("[Main] Valid types: microphone, bluetooth, audio, magnetometer, rfbeam, microwave, camera, seismic, alibi, gps_battery, rm3100")
             return
         
         print("[Main] All sensor types validated successfully")

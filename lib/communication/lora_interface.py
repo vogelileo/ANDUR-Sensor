@@ -117,6 +117,18 @@ class LoRaInterface:
         self.initialized = False
         self.config = config or {}
         
+        # Initialize LED for transmission indicator
+        self.led_pin = self.config.get('led_pin')
+        self.led_blink_ms = self.config.get('led_blink_ms', 100)
+        self.led = None
+        if self.led_pin is not None:
+            try:
+                self.led = Pin(self.led_pin, Pin.OUT, value=0)
+                print("[LoRa] LED indicator initialized on pin {}".format(self.led_pin))
+            except Exception as e:
+                print("[LoRa] Warning: Could not initialize LED on pin {}: {}".format(self.led_pin, e))
+                self.led = None
+        
         # Transmission queue for non-blocking sends
         self.tx_queue = []
         self.tx_queue_max_size = 10  # Bounded queue to prevent memory issues
@@ -158,6 +170,22 @@ class LoRaInterface:
         print("[LoRa] TX Power: {} dBm".format(self.tx_power))
         print("[LoRa] SF: {}, BW: {} Hz, CR: 4/{}".format(
             self.spreading_factor, self.bandwidth, self.coding_rate))
+
+    def _led_on(self):
+        """Turn on the LED indicator (if configured)."""
+        if self.led is not None:
+            try:
+                self.led.value(1)
+            except Exception:
+                pass  # Silently ignore LED errors
+    
+    def _led_off(self):
+        """Turn off the LED indicator (if configured)."""
+        if self.led is not None:
+            try:
+                self.led.value(0)
+            except Exception:
+                pass  # Silently ignore LED errors
 
     def wait_busy(self):
         """Wait for BUSY pin to go low with timeout."""
@@ -524,6 +552,9 @@ class LoRaInterface:
         print("[LoRa] Transmitting {} bytes...".format(len(binary_payload)))
         
         try:
+            # Turn on LED to indicate transmission start
+            self._led_on()
+            
             # Set to standby mode
             self._set_standby(SX1262_STANDBY_RC)
             await asyncio.sleep_ms(10)  # Cooperative yield
@@ -587,6 +618,13 @@ class LoRaInterface:
             # Return to standby
             self._set_standby(SX1262_STANDBY_RC)
             
+            # Keep LED on for configured duration to make it visible
+            if self.led is not None:
+                await asyncio.sleep_ms(self.led_blink_ms)
+            
+            # Turn off LED after transmission
+            self._led_off()
+            
             # Determine success
             if tx_done:
                 print("[LoRa] ✓ Transmission successful!")
@@ -618,6 +656,9 @@ class LoRaInterface:
                 
         except Exception as e:
             print("[LoRa] ✗ Error during transmission: {}".format(e))
+            
+            # Turn off LED on error
+            self._led_off()
             
             # Try to recover
             try:
