@@ -92,7 +92,7 @@ class EnergyHysteresisAlgorithm(BaseAlgorithm):
     }
     
     def __init__(self, algo_id, sensor_id, data_store, lora_interface,
-                 check_interval, params, sensor_mac=None, monitor=None):
+                 check_interval, params, sensor_mac=None, monitor=None, installed_sensors=None):
         """
         Initialize the energy hysteresis algorithm.
         
@@ -105,11 +105,13 @@ class EnergyHysteresisAlgorithm(BaseAlgorithm):
             params: dict with algorithm parameters
             sensor_mac: 6-character hex MAC address for LoRa transmission
             monitor: SystemMonitor instance for tracking statistics
+            installed_sensors: List of sensor config dicts for building payload
         """
         # Initialize base class with event mode
         super().__init__(algo_id, sensor_id, data_store, lora_interface,
                         check_interval, mode='event', params=params,
-                        sensor_mac=sensor_mac, monitor=monitor)
+                        sensor_mac=sensor_mac, monitor=monitor,
+                        installed_sensors=installed_sensors)
         
         # Threshold parameters
         self.activation_threshold = params.get('activation_threshold', 150.0)

@@ -272,6 +272,9 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             sensor_mac = sensor_config.get("mac_address")
             break
     
+    # Filter to only enabled sensors for payload building
+    installed_sensors = [s for s in sensors_config if s.get("enabled", True)]
+    
     # Removed threshold and moving_average algorithm types - classes don't exist
     # if algo_type == "threshold":
     #     return ThresholdDetector(
@@ -301,7 +304,8 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             check_interval=check_interval,
             params=params,
             sensor_mac=sensor_mac,
-            monitor=monitor
+            monitor=monitor,
+            installed_sensors=installed_sensors
         )
     elif algo_type == "microwave_detection":
         return MicrowaveDetectionAlgorithm(
@@ -312,7 +316,8 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             check_interval=check_interval,
             params=params,
             sensor_mac=sensor_mac,
-            monitor=monitor
+            monitor=monitor,
+            installed_sensors=installed_sensors
         )
     elif algo_type == "adaptive_threshold":
         return AdaptiveThresholdAlgorithm(
@@ -323,7 +328,8 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             check_interval=check_interval,
             params=params,
             sensor_mac=sensor_mac,
-            monitor=monitor
+            monitor=monitor,
+            installed_sensors=installed_sensors
         )
     elif algo_type == "energy_hysteresis":
         return EnergyHysteresisAlgorithm(
@@ -334,7 +340,8 @@ def create_algorithm(algo_config, data_store, lora_interface, sensors_config, mo
             check_interval=check_interval,
             params=params,
             sensor_mac=sensor_mac,
-            monitor=monitor
+            monitor=monitor,
+            installed_sensors=installed_sensors
         )
     else:
         raise ValueError("Unknown algorithm type: {}".format(algo_type))
@@ -363,6 +370,36 @@ async def main():
         print("\n[Main] Loading configuration...")
         config = load_config("config.json")
         print("[Main] Configuration loaded successfully")
+        
+        # Validate sensor types can be mapped to protocol enums
+        print("\n[Main] Validating sensor types...")
+        from lib.protocol.payload import get_sensor_enum_from_type, SensorEnum
+        
+        validation_errors = []
+        for sensor_config in config["sensors"]:
+            if not sensor_config.get("enabled", True):
+                continue
+            
+            sensor_type = sensor_config.get("type", "")
+            sensor_id = sensor_config.get("id", "unknown")
+            
+            # Skip gps_battery - it's not in the protocol enum
+            if sensor_type == "gps_battery":
+                continue
+            
+            sensor_enum = get_sensor_enum_from_type(sensor_type)
+            if sensor_enum == SensorEnum.NOT_INSTALLED:
+                validation_errors.append(f"Sensor '{sensor_id}' has unmapped type '{sensor_type}'")
+        
+        if validation_errors:
+            print("[Main] ERROR: Sensor type validation failed:")
+            for error in validation_errors:
+                print(f"[Main]   - {error}")
+            print("[Main] Please update config.json with valid sensor types")
+            print("[Main] Valid types: microphone, bluetooth, audio, magnetometer, rfbeam, microwave, camera, seismic, alibi, gps_battery")
+            return
+        
+        print("[Main] All sensor types validated successfully")
         
         # Initialize system monitor early
         print("\n[Main] Initializing system monitor...")

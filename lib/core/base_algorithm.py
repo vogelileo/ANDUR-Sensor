@@ -23,7 +23,8 @@ class BaseAlgorithm:
     """
     
     def __init__(self, algo_id, sensor_id, data_store, lora_interface,
-                 check_interval, mode, params, sensor_mac=None, monitor=None):
+                 check_interval, mode, params, sensor_mac=None, monitor=None,
+                 installed_sensors=None):
         """
         Initialize the base algorithm.
         
@@ -37,6 +38,7 @@ class BaseAlgorithm:
             params: dict of algorithm-specific parameters
             sensor_mac: 6-character hex MAC address for LoRa transmission
             monitor: SystemMonitor instance for tracking statistics
+            installed_sensors: List of sensor config dicts for building payload
         """
         self.algo_id = algo_id
         self.sensor_id = sensor_id
@@ -48,6 +50,7 @@ class BaseAlgorithm:
         self.params = params
         self.monitor = monitor
         self.registered = False  # Track if registered as consumer
+        self.installed_sensors = installed_sensors or []  # Store for payload building
         
         print(f"[{self.algo_id}] Algorithm initialized (sensor={sensor_id}, mac={self.sensor_mac}, mode={mode}, interval={check_interval}s)")
     
@@ -199,73 +202,76 @@ class BaseAlgorithm:
     
     async def _send_lora(self, result, data):
         """
-        Send LoRa message with algorithm result.
+        Send LoRa message with algorithm result using new protocol.
         
         Args:
             result: dict from process() containing trigger data
-            data: dict with original sensor data (for extracting GPS/battery)
+            data: dict with original sensor data
         """
         try:
+            from lib.protocol.payload import build_sensor_data_from_config
+            
             debug_print("[ALGO LORA]", f"Preparing LoRa message for {self.algo_id}")
             
-            # Clamp value to LoRa protocol limits (0-255 for single byte)
+            # Clamp value to protocol limits (2-255 for triggered sensors)
             original_value = result['value']
-            clamped_value = int(min(max(original_value, 0), 255))
+            clamped_value = int(min(max(original_value, 2), 255))
             
             if original_value != clamped_value:
-                debug_print("[ALGO LORA]", f"Value clamped: {original_value} -> {clamped_value} (LoRa protocol limit 0-255)")
+                debug_print("[ALGO LORA]", f"Value clamped: {original_value} -> {clamped_value} (protocol range 2-255)")
             
             # Extract sensor type from sensor_id
-            # Handle patterns like: "microwave1", "microwave_sensor_1", "alibi_sensor"
             sensor_type = self.sensor_id.lower()
-            
-            # Remove common suffixes and numbers
             for suffix in ['_sensor_', '_sensor', 'sensor_', 'sensor']:
                 sensor_type = sensor_type.replace(suffix, '')
-            
-            # Remove trailing digits and underscores
-            sensor_type = sensor_type.rstrip('0123456789_')
-            
-            # Remove leading underscores
-            sensor_type = sensor_type.lstrip('_')
+            sensor_type = sensor_type.rstrip('0123456789_').lstrip('_')
             
             debug_print("[ALGO LORA]", f"Extracted sensor type: '{sensor_type}' from sensor_id: '{self.sensor_id}'")
             
-            # Encode sensor and algorithm into sensor_algo_enum
-            try:
-                from communication.lora_interface import LoRaInterface
-                sensor_algo_enum = LoRaInterface.encode_sensor_algo_enum(sensor_type, self.algo_id)
-                debug_print("[ALGO LORA]", f"Encoded sensor_algo_enum: {sensor_algo_enum} (sensor={sensor_type}, algo={self.algo_id})")
-            except Exception as e:
-                print(f"[ALGO LORA] Warning: Could not encode sensor_algo_enum: {e}")
-                print(f"[ALGO LORA] Using sensor_type='{sensor_type}', algo_id='{self.algo_id}'")
-                sensor_algo_enum = 0
+            # Get retained triggers BEFORE recording current trigger
+            # This ensures the payload reflects the state at trigger time
+            retained_triggers = self.data_store.get_retained_triggered_sensors()
+            debug_print("[ALGO LORA]", f"Retained triggers (before current): {retained_triggers}")
             
-            # Always use global metadata for GPS and battery data
+            # Now record current trigger for future payloads
+            self.data_store.mark_sensor_triggered(sensor_type, clamped_value)
+            
+            # Get global metadata for GPS and battery
             global_metadata = self.data_store.get_global_metadata()
             gps_lat = global_metadata['gps_latitude']
             gps_lon = global_metadata['gps_longitude']
             battery = global_metadata['battery']
             
-            # Prepare DataPackage payload with required fields only
-            # The LoRa interface expects specific DataPackage fields
+            # Build sensor_data list for ALL installed sensors
+            # Includes current trigger plus any sensors still within retention window
+            sensor_data = build_sensor_data_from_config(
+                self.installed_sensors,
+                triggering_sensor_type=sensor_type,
+                trigger_value=clamped_value,
+                retained_triggers=retained_triggers
+            )
+            
+            debug_print("[ALGO LORA]", f"Built sensor_data with {len(sensor_data)} sensors")
+            for sensor_enum, value in sensor_data:
+                debug_print("[ALGO LORA]", f"  Sensor enum {sensor_enum}: value {value}")
+            
+            # Prepare payload dict for new protocol
             payload = {
-                'sensor_id': self.sensor_mac,  # Use MAC address for LoRa transmission
-                'value': clamped_value,
+                'device_id': self.sensor_mac,  # Use MAC address
                 'gps_latitude': gps_lat,
                 'gps_longitude': gps_lon,
                 'battery': battery,
                 'hops': 0,
-                'sensor_algo_enum': sensor_algo_enum,
+                'sensor_data': sensor_data,
                 'version': 1
             }
             
-            debug_print("[ALGO LORA]", f"DataPackage prepared: sensor_id={self.sensor_mac}, value={clamped_value}, enum={sensor_algo_enum}")
+            debug_print("[ALGO LORA]", f"Payload prepared: device_id={self.sensor_mac}, {len(sensor_data)} sensors")
             
             # Send via LoRa (not async, don't use await)
             debug_print("[ALGO LORA]", "Sending via LoRa interface...")
             self.lora_interface.send(payload)
-            debug_print("[ALGO LORA]", f"LoRa message sent successfully: value={clamped_value}")
+            debug_print("[ALGO LORA]", f"LoRa message sent successfully")
             
         except Exception as e:
             print(f"[ALGO LORA ERROR] Exception sending LoRa: {e}")

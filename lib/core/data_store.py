@@ -29,6 +29,10 @@ class DataStore:
         self.gps_latitude = 0.0
         self.gps_longitude = 0.0
         self.battery = 100
+        
+        # Shared trigger retention state for payload generation
+        self.trigger_retention_seconds = 2.0
+        self.triggered_sensors = {}
     
     def register_sensor(self, sensor_id, buffer_size):
         """
@@ -287,6 +291,54 @@ class DataStore:
         self.gps_longitude = float(gps_lon)
         self.battery = int(battery)
     
+    def mark_sensor_triggered(self, sensor_type, trigger_value, timestamp=None):
+        """
+        Record a sensor as triggered for the shared retention window.
+        
+        Args:
+            sensor_type: Normalized sensor type string used by payload building
+            trigger_value: Protocol value to encode for the triggered sensor
+            timestamp: Optional trigger timestamp in seconds
+        """
+        if not sensor_type:
+            return
+        
+        if timestamp is None:
+            timestamp = time.time()
+        
+        self.triggered_sensors[sensor_type] = {
+            'timestamp': float(timestamp),
+            'value': int(trigger_value)
+        }
+    
+    def get_retained_triggered_sensors(self, now=None):
+        """
+        Get currently retained triggered sensors and prune expired entries.
+        
+        Args:
+            now: Optional current time in seconds
+        
+        Returns:
+            dict mapping sensor_type -> retained protocol value
+        """
+        if now is None:
+            now = time.time()
+        
+        retained = {}
+        expired = []
+        
+        for sensor_type, trigger_info in self.triggered_sensors.items():
+            trigger_time = trigger_info.get('timestamp', 0)
+            if (now - trigger_time) <= self.trigger_retention_seconds:
+                retained[sensor_type] = int(trigger_info.get('value', 0))
+            else:
+                expired.append(sensor_type)
+        
+        for sensor_type in expired:
+            del self.triggered_sensors[sensor_type]
+        
+        return retained
+    
     def get_global_metadata(self):
         """
         Get current global GPS and battery metadata.
@@ -298,13 +350,6 @@ class DataStore:
             'gps_latitude': self.gps_latitude,
             'gps_longitude': self.gps_longitude,
             'battery': self.battery
-        }
-        return {
-            'buffer_size': sensor['buffer_size'],
-            'current_count': len(sensor['frames']),
-            'is_full': sensor['is_full'],
-            'frame_sequence': sensor['frame_sequence'],
-            'consumers': list(sensor['consumers'].keys())
         }
 
 # Made with Bob

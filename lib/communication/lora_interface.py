@@ -6,10 +6,15 @@ Raspberry Pi Pico. It handles SPI communication, radio configuration,
 packet transmission, and reception with full 16-byte DataPackage support.
 """
 
-import json
 import struct
 import time
 from machine import SPI, Pin
+from lib.protocol.payload import (
+    encode_payload,
+    decode_payload,
+    PROTOCOL_VERSION,
+    FIXED_HEADER_SIZE,
+)
 
 # SX1262 Register Commands
 SX1262_CMD_SET_SLEEP = 0x84
@@ -75,33 +80,9 @@ IRQ_TIMEOUT = 0x0200
 IRQ_CRC_ERROR = 0x0040
 IRQ_ALL = 0xFFFF
 
-# Protocol constants
-PROTOCOL_VERSION = 1
-TOTAL_PACKAGE_SIZE = 16
+# Legacy protocol constants (kept for backward compatibility)
 CONTROL_MESSAGE_MIN = 0
 CONTROL_MESSAGE_MAX = 15
-
-# Schema-based type mappings
-SENSOR_TYPE_MAP = {
-    "magnetic": 0,
-    "temperature": 1,
-    "pressure": 2,
-    "humidity": 3,
-    "microwave": 4,
-    "alibi": 5,
-    "gps_battery": 6
-}
-
-ALGO_TYPE_MAP = {
-    "threshold": 0,
-    "moving_average": 1,
-    "peak_detector": 2,
-    "anomaly": 3,
-    "adaptive_threshold": 4,
-    "energy_hysteresis": 5,
-    "microwave_detection": 6,
-    "random": 7
-}
 
 
 class LoRaInterface:
@@ -134,16 +115,6 @@ class LoRaInterface:
         self.monitor = monitor
         self.initialized = False
         self.config = config or {}
-        
-        # Load protocol schema
-        try:
-            with open('lora_protocol_schema.json', 'r') as f:
-                self.schema = json.load(f)
-                print("[LoRa] Protocol schema loaded (version {})".format(
-                    self.schema.get('version', 'unknown')))
-        except Exception as e:
-            print("[LoRa] Warning: Could not load protocol schema: {}".format(e))
-            self.schema = None
         
         # Extract configuration parameters with defaults
         self.frequency = self.config.get('frequency', 868000000)
@@ -385,176 +356,58 @@ class LoRaInterface:
         print("[LoRa] ✓ Radio in RX continuous mode")
         return True
 
-    def _validate_data_package(self, data):
+    def _format_payload(self, device_id, gps_lat, gps_lon, battery, hops, sensor_data, version=None):
         """
-        Validate a complete DataPackage against schema.
+        Format a variable-length LoRa payload using the new protocol.
         
         Args:
-            data: dict with DataPackage fields
-            
-        Returns:
-            tuple: (is_valid, error_message)
-        """
-        if not self.schema:
-            return True, None
-        
-        # Validate version
-        version = data.get('version', PROTOCOL_VERSION)
-        if not isinstance(version, int) or version < 0 or version > 255:
-            return False, "Invalid version: {}".format(version)
-        
-        # Validate battery
-        battery = data.get('battery')
-        if battery is not None:
-            if not isinstance(battery, int) or battery < 0 or battery > 100:
-                return False, "Invalid battery level: {} (must be 0-100)".format(battery)
-        
-        # Validate GPS coordinates
-        gps_lat = data.get('gps_latitude')
-        if gps_lat is not None:
-            if not isinstance(gps_lat, (int, float)) or gps_lat < -90 or gps_lat > 90:
-                return False, "Invalid GPS latitude: {}".format(gps_lat)
-        
-        gps_lon = data.get('gps_longitude')
-        if gps_lon is not None:
-            if not isinstance(gps_lon, (int, float)) or gps_lon < -180 or gps_lon > 180:
-                return False, "Invalid GPS longitude: {}".format(gps_lon)
-        
-        # Validate hops
-        hops = data.get('hops')
-        if hops is not None:
-            if not isinstance(hops, int) or hops < 0 or hops > 255:
-                return False, "Invalid hops: {}".format(hops)
-        
-        # Validate sensor_algo_enum
-        sensor_algo_enum = data.get('sensor_algo_enum')
-        if sensor_algo_enum is not None:
-            if not isinstance(sensor_algo_enum, int) or sensor_algo_enum < 0 or sensor_algo_enum > 255:
-                return False, "Invalid sensor_algo_enum: {}".format(sensor_algo_enum)
-        
-        # Validate value
-        value = data.get('value')
-        if value is not None:
-            if not isinstance(value, int) or value < 0 or value > 255:
-                return False, "Invalid value: {}".format(value)
-        
-        return True, None
-
-    def _format_data_package(self, sensor_id, gps_lat, gps_lon, battery, hops,
-                            sensor_algo_enum, value, version=None):
-        """
-        Format a complete 16-byte DataPackage according to schema.
-        
-        Args:
-            sensor_id: 3-byte sensor MAC address (as hex string or bytes)
+            device_id: 3-byte device MAC address (as hex string or bytes)
             gps_lat: GPS latitude (float, -90 to 90)
             gps_lon: GPS longitude (float, -180 to 180)
             battery: Battery level (int, 0-100)
             hops: Network hop count (int, 0-255)
-            sensor_algo_enum: Sensor/algorithm enumeration (int, 0-255)
-            value: Sensor reading value (int, 0-255)
+            sensor_data: List of (sensor_enum, value) tuples
             version: Protocol version (int, default: PROTOCOL_VERSION)
             
         Returns:
-            bytes object with exactly 16 bytes
+            bytes object with variable length
         """
         if version is None:
             version = PROTOCOL_VERSION
         
-        # Validate inputs
-        data = {
-            'version': version,
-            'sensor_id': sensor_id,
-            'gps_latitude': gps_lat,
-            'gps_longitude': gps_lon,
-            'battery': battery,
-            'hops': hops,
-            'sensor_algo_enum': sensor_algo_enum,
-            'value': value
-        }
-        
-        is_valid, error_msg = self._validate_data_package(data)
-        if not is_valid:
-            raise ValueError("DataPackage validation failed: {}".format(error_msg))
-        
-        # Convert sensor_id to bytes if it's a hex string
-        if isinstance(sensor_id, str):
-            if len(sensor_id) != 6:
-                raise ValueError("sensor_id must be 6 hex characters")
-            sensor_id_bytes = bytes.fromhex(sensor_id)
-        else:
-            sensor_id_bytes = sensor_id
-        
-        if len(sensor_id_bytes) != 3:
-            raise ValueError("sensor_id must be exactly 3 bytes")
-        
-        # Pack according to schema fieldMapping
-        package = bytearray(TOTAL_PACKAGE_SIZE)
-        package[0] = version
-        package[1:4] = sensor_id_bytes
-        
-        # Pack floats as big-endian IEEE 754
-        struct.pack_into('>f', package, 4, gps_lat)
-        struct.pack_into('>f', package, 8, gps_lon)
-        
-        package[12] = battery
-        package[13] = hops
-        package[14] = sensor_algo_enum
-        package[15] = value
-        
-        return bytes(package)
+        try:
+            return encode_payload(version, device_id, gps_lat, gps_lon, battery, hops, sensor_data)
+        except Exception as e:
+            raise ValueError("Payload encoding failed: {}".format(e))
 
-    def _unpack_data_package(self, package_bytes):
+    def _unpack_payload(self, payload_bytes):
         """
-        Unpack a 16-byte DataPackage into a dictionary.
+        Unpack a variable-length LoRa payload using the new protocol.
         
         Args:
-            package_bytes: bytes object with exactly 16 bytes
+            payload_bytes: bytes object
             
         Returns:
-            dict with unpacked DataPackage fields
+            dict with unpacked payload fields
         """
-        if len(package_bytes) != TOTAL_PACKAGE_SIZE:
-            raise ValueError("Invalid package size: {} (expected {})".format(
-                len(package_bytes), TOTAL_PACKAGE_SIZE))
-        
-        # Unpack according to schema fieldMapping
-        version = package_bytes[0]
-        sensor_id = package_bytes[1:4].hex().upper()
-        
-        # Unpack floats as big-endian IEEE 754
-        gps_lat = struct.unpack_from('>f', package_bytes, 4)[0]
-        gps_lon = struct.unpack_from('>f', package_bytes, 8)[0]
-        
-        battery = package_bytes[12]
-        hops = package_bytes[13]
-        sensor_algo_enum = package_bytes[14]
-        value = package_bytes[15]
-        
-        data = {
-            'version': version,
-            'sensor_id': sensor_id,
-            'gps_latitude': gps_lat,
-            'gps_longitude': gps_lon,
-            'battery': battery,
-            'hops': hops,
-            'sensor_algo_enum': sensor_algo_enum,
-            'value': value
-        }
-        
-        # Validate unpacked data
-        is_valid, error_msg = self._validate_data_package(data)
-        if not is_valid:
-            print("[LoRa] Warning: Unpacked package validation failed: {}".format(error_msg))
-        
-        return data
+        try:
+            return decode_payload(payload_bytes)
+        except Exception as e:
+            raise ValueError("Payload decoding failed: {}".format(e))
 
-    def send(self, data_package):
+    def send(self, payload_dict):
         """
-        Send a 16-byte DataPackage via LoRa.
+        Send a variable-length LoRa payload via LoRa.
         
         Args:
-            data_package: Either a dict with DataPackage fields or bytes (16 bytes)
+            payload_dict: Dict with keys:
+                - device_id: 3-byte MAC address (hex string or bytes)
+                - gps_latitude: float
+                - gps_longitude: float
+                - battery: int (0-100)
+                - hops: int (0-255)
+                - sensor_data: list of (sensor_enum, value) tuples
+                - version: int (optional, defaults to PROTOCOL_VERSION)
             
         Returns:
             bool: True if transmission successful, False otherwise
@@ -564,29 +417,20 @@ class LoRaInterface:
             print("[LoRa] ✗ Error: {}".format(error_msg))
             raise RuntimeError(error_msg)
         
-        # Convert dict to bytes if needed
-        if isinstance(data_package, dict):
-            try:
-                binary_payload = self._format_data_package(
-                    data_package.get('sensor_id', '000000'),
-                    data_package.get('gps_latitude', 0.0),
-                    data_package.get('gps_longitude', 0.0),
-                    data_package.get('battery', 0),
-                    data_package.get('hops', 0),
-                    data_package.get('sensor_algo_enum', 0),
-                    data_package.get('value', 0),
-                    data_package.get('version', PROTOCOL_VERSION)
-                )
-            except Exception as e:
-                print("[LoRa] ✗ Error formatting data package: {}".format(e))
-                raise ValueError("Failed to format data package: {}".format(e))
-        else:
-            binary_payload = data_package
-        
-        # Validate payload length
-        if len(binary_payload) != TOTAL_PACKAGE_SIZE:
-            raise ValueError("Invalid payload size: {} (expected {})".format(
-                len(binary_payload), TOTAL_PACKAGE_SIZE))
+        # Format payload using new protocol
+        try:
+            binary_payload = self._format_payload(
+                payload_dict.get('device_id', '000000'),
+                payload_dict.get('gps_latitude', 0.0),
+                payload_dict.get('gps_longitude', 0.0),
+                payload_dict.get('battery', 0),
+                payload_dict.get('hops', 0),
+                payload_dict.get('sensor_data', []),
+                payload_dict.get('version', PROTOCOL_VERSION)
+            )
+        except Exception as e:
+            print("[LoRa] ✗ Error formatting payload: {}".format(e))
+            raise ValueError("Failed to format payload: {}".format(e))
         
         # Log hex representation of the packet
         hex_str = binary_payload.hex().upper()
@@ -663,13 +507,17 @@ class LoRaInterface:
                 # Track message in monitor if available
                 if self.monitor:
                     try:
-                        unpacked = self._unpack_data_package(binary_payload)
-                        self.monitor.add_lora_message(
-                            unpacked.get('sensor_algo_enum', 0),
-                            unpacked.get('sensor_id', '000000'),
-                            unpacked.get('value', 0),
-                            int(time.time())
-                        )
+                        unpacked = self._unpack_payload(binary_payload)
+                        # For monitoring, use first sensor in the list if available
+                        sensors = unpacked.get('sensors', [])
+                        if sensors:
+                            first_sensor = sensors[0]
+                            self.monitor.add_lora_message(
+                                first_sensor.get('sensor_enum', 0),
+                                unpacked.get('device_id', '000000'),
+                                first_sensor.get('value', 0),
+                                int(time.time())
+                            )
                     except:
                         pass
                 
@@ -693,7 +541,7 @@ class LoRaInterface:
 
     def receive(self, timeout_ms=None):
         """
-        Receive a LoRa packet (16-byte DataPackage format).
+        Receive a LoRa packet (variable-length payload format).
         
         Args:
             timeout_ms: Timeout in milliseconds (not used, non-blocking)
@@ -729,149 +577,43 @@ class LoRaInterface:
             "hex": payload.hex(),
         }
         
-        # Try to unpack as DataPackage if it's 16 bytes
-        if plen == TOTAL_PACKAGE_SIZE:
+        # Try to unpack payload if it's at least the minimum size
+        if plen >= FIXED_HEADER_SIZE:
             try:
-                unpacked = self._unpack_data_package(payload)
-                result["data_package"] = unpacked
+                unpacked = self._unpack_payload(payload)
+                result["decoded"] = unpacked
                 
                 # Track in monitor if available
                 if self.monitor:
                     try:
-                        self.monitor.add_lora_message(
-                            unpacked.get('sensor_algo_enum', 0),
-                            unpacked.get('sensor_id', '000000'),
-                            unpacked.get('value', 0),
-                            int(time.time())
-                        )
+                        sensors = unpacked.get('sensors', [])
+                        if sensors:
+                            first_sensor = sensors[0]
+                            self.monitor.add_lora_message(
+                                first_sensor.get('sensor_enum', 0),
+                                unpacked.get('device_id', '000000'),
+                                first_sensor.get('value', 0),
+                                int(time.time())
+                            )
                     except:
                         pass
             except Exception as e:
-                print("[LoRa] Warning: Could not unpack DataPackage: {}".format(e))
+                print("[LoRa] Warning: Could not decode payload: {}".format(e))
         
         return result
 
     @staticmethod
-    def get_sensor_type_id(sensor_name):
+    def is_control_message(value):
         """
-        Get sensor type ID from name.
+        Check if a value is in the control message range.
         
         Args:
-            sensor_name: Sensor type name (e.g., 'magnetic', 'microwave')
-            
-        Returns:
-            int: Sensor type ID
-        """
-        if sensor_name not in SENSOR_TYPE_MAP:
-            raise ValueError("Unknown sensor type: {}".format(sensor_name))
-        return SENSOR_TYPE_MAP[sensor_name]
-
-    @staticmethod
-    def get_algo_type_id(algo_name):
-        """
-        Get algorithm type ID from name.
-        
-        Args:
-            algo_name: Algorithm type name (e.g., 'threshold', 'adaptive_threshold')
-            
-        Returns:
-            int: Algorithm type ID
-        """
-        if algo_name not in ALGO_TYPE_MAP:
-            raise ValueError("Unknown algorithm type: {}".format(algo_name))
-        return ALGO_TYPE_MAP[algo_name]
-
-    @staticmethod
-    def get_sensor_name_from_id(sensor_id):
-        """
-        Get sensor name from ID.
-        
-        Args:
-            sensor_id: Sensor type ID (int)
-            
-        Returns:
-            str: Sensor type name or 'unknown'
-        """
-        for name, sid in SENSOR_TYPE_MAP.items():
-            if sid == sensor_id:
-                return name
-        return 'unknown'
-
-    @staticmethod
-    def get_algo_name_from_id(algo_id):
-        """
-        Get algorithm name from ID.
-        
-        Args:
-            algo_id: Algorithm type ID (int)
-            
-        Returns:
-            str: Algorithm type name or 'unknown'
-        """
-        for name, aid in ALGO_TYPE_MAP.items():
-            if aid == algo_id:
-                return name
-        return 'unknown'
-
-    @staticmethod
-    def is_control_message(sensor_algo_enum):
-        """
-        Check if sensor_algo_enum value is in the control message range.
-        
-        Args:
-            sensor_algo_enum: The sensor_algo_enum value to check
+            value: The value to check
             
         Returns:
             bool: True if value is in control range (0-15)
         """
-
-    @staticmethod
-    def encode_sensor_algo_enum(sensor_name, algo_name):
-        """
-        Encode sensor and algorithm names into sensor_algo_enum byte.
-        
-        The sensor_algo_enum uses bit-packing:
-        - Bits 4-7 (upper nibble): Sensor Type ID (0-15)
-        - Bits 0-3 (lower nibble): Algorithm Type ID (0-15)
-        
-        Args:
-            sensor_name: Name of the sensor type (e.g., 'microwave', 'alibi')
-            algo_name: Name of the algorithm (e.g., 'adaptive_threshold', 'random')
-        
-        Returns:
-            int: Combined sensor_algo_enum byte (0-255)
-        
-        Example:
-            >>> LoRaInterface.encode_sensor_algo_enum('microwave', 'adaptive_threshold')
-            68  # (4 << 4) | 4 = 0x44
-        """
-        sensor_id = LoRaInterface.get_sensor_type_id(sensor_name)
-        algo_id = LoRaInterface.get_algo_type_id(algo_name)
-        return (sensor_id << 4) | algo_id
-
-    @staticmethod
-    def decode_sensor_algo_enum(sensor_algo_enum):
-        """
-        Decode sensor_algo_enum byte into sensor and algorithm IDs.
-        
-        The sensor_algo_enum uses bit-packing:
-        - Bits 4-7 (upper nibble): Sensor Type ID (0-15)
-        - Bits 0-3 (lower nibble): Algorithm Type ID (0-15)
-        
-        Args:
-            sensor_algo_enum: Combined sensor/algorithm enumeration byte (0-255)
-        
-        Returns:
-            tuple: (sensor_id, algo_id) where both are integers 0-15
-        
-        Example:
-            >>> LoRaInterface.decode_sensor_algo_enum(68)
-            (4, 4)  # sensor_id=4 (microwave), algo_id=4 (adaptive_threshold)
-        """
-        sensor_id = (sensor_algo_enum >> 4) & 0x0F
-        algo_id = sensor_algo_enum & 0x0F
-        return sensor_id, algo_id
-        return CONTROL_MESSAGE_MIN <= sensor_algo_enum <= CONTROL_MESSAGE_MAX
+        return CONTROL_MESSAGE_MIN <= value <= CONTROL_MESSAGE_MAX
 
 
 # Made with Bob
