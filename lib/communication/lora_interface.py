@@ -8,6 +8,7 @@ packet transmission, and reception with full 16-byte DataPackage support.
 
 import struct
 import time
+import asyncio
 from machine import SPI, Pin
 from lib.protocol.payload import (
     encode_payload,
@@ -115,6 +116,11 @@ class LoRaInterface:
         self.monitor = monitor
         self.initialized = False
         self.config = config or {}
+        
+        # Transmission queue for non-blocking sends
+        self.tx_queue = []
+        self.tx_queue_max_size = 10  # Bounded queue to prevent memory issues
+        self.worker_running = False
         
         # Extract configuration parameters with defaults
         self.frequency = self.config.get('frequency', 868000000)
@@ -397,7 +403,87 @@ class LoRaInterface:
 
     def send(self, payload_dict):
         """
-        Send a variable-length LoRa payload via LoRa.
+        Enqueue a LoRa payload for non-blocking transmission.
+        
+        This is the public API that algorithms call. It enqueues the payload
+        and returns immediately without blocking. The actual transmission
+        happens in the background worker task.
+        
+        Args:
+            payload_dict: Dict with keys:
+                - device_id: 3-byte MAC address (hex string or bytes)
+                - gps_latitude: float
+                - gps_longitude: float
+                - battery: int (0-100)
+                - hops: int (0-255)
+                - sensor_data: list of (sensor_enum, value) tuples
+                - version: int (optional, defaults to PROTOCOL_VERSION)
+            
+        Returns:
+            bool: True if enqueued successfully, False if queue is full
+        """
+        if not self.initialized:
+            print("[LoRa] ✗ Error: Radio not initialized. Call initialize() first.")
+            return False
+        
+        # Check if queue is full
+        if len(self.tx_queue) >= self.tx_queue_max_size:
+            print("[LoRa] ✗ Warning: TX queue full ({}/{}), dropping packet".format(
+                len(self.tx_queue), self.tx_queue_max_size))
+            return False
+        
+        # Enqueue payload
+        self.tx_queue.append(payload_dict)
+        print("[LoRa] ✓ Payload enqueued ({}/{} in queue)".format(
+            len(self.tx_queue), self.tx_queue_max_size))
+        return True
+    
+    async def transmission_worker(self):
+        """
+        Async worker task that drains the transmission queue.
+        
+        This task runs continuously in the background, processing queued
+        payloads in FIFO order. Transmission uses cooperative async patterns
+        to avoid blocking the event loop for extended periods.
+        
+        Should be started as an asyncio task in main.py.
+        """
+        self.worker_running = True
+        print("[LoRa] Transmission worker started")
+        
+        while self.worker_running:
+            try:
+                # Check if there are payloads to send
+                if len(self.tx_queue) > 0:
+                    # Dequeue oldest payload (FIFO)
+                    payload_dict = self.tx_queue.pop(0)
+                    print("[LoRa] Processing queued payload ({} remaining in queue)".format(
+                        len(self.tx_queue)))
+                    
+                    # Perform cooperative transmission
+                    try:
+                        success = await self._send_cooperative(payload_dict)
+                        if not success:
+                            print("[LoRa] ✗ Transmission failed for queued payload")
+                    except Exception as e:
+                        print("[LoRa] ✗ Error transmitting queued payload: {}".format(e))
+                else:
+                    # Queue empty, yield control to other tasks
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                print("[LoRa] ✗ Error in transmission worker: {}".format(e))
+                await asyncio.sleep(1)  # Back off on error
+        
+        print("[LoRa] Transmission worker stopped")
+    
+    async def _send_cooperative(self, payload_dict):
+        """
+        Internal cooperative async method that performs actual radio transmission.
+        
+        This method uses cooperative yields to avoid blocking the event loop
+        for extended periods. SPI calls are still synchronous (hardware limitation),
+        but long waits and polling loops yield frequently.
         
         Args:
             payload_dict: Dict with keys:
@@ -440,7 +526,7 @@ class LoRaInterface:
         try:
             # Set to standby mode
             self._set_standby(SX1262_STANDBY_RC)
-            time.sleep_ms(10)
+            await asyncio.sleep_ms(10)  # Cooperative yield
             
             # Clear any pending IRQs
             self._clear_irq_status(IRQ_ALL)
@@ -458,24 +544,25 @@ class LoRaInterface:
             tx_timeout = 320000  # ~5 seconds
             self._set_tx(tx_timeout)
             
-            time.sleep_ms(10)
+            await asyncio.sleep_ms(10)  # Cooperative yield
             
-            # Wait for TX completion
+            # Wait for TX completion with cooperative polling
             tx_done = False
             tx_timeout_flag = False
             timeout_count = 0
-            max_timeout = 100  # 10 seconds max wait
+            max_timeout = 100  # 10 seconds max wait (100 * 100ms)
             
             while not tx_done and not tx_timeout_flag and timeout_count < max_timeout:
-                time.sleep_ms(100)
+                # Cooperative sleep instead of blocking
+                await asyncio.sleep_ms(100)
                 timeout_count += 1
                 
-                # Check DIO1 pin
+                # Check DIO1 pin (fast, non-blocking hardware read)
                 if self.dio1():
                     tx_done = True
                     break
                 
-                # Read IRQ status via SPI
+                # Read IRQ status via SPI (synchronous but fast)
                 try:
                     irq_status = self._get_irq_status()
                     

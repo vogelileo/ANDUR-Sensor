@@ -545,6 +545,10 @@ async def main():
         # Prepare additional tasks
         additional_tasks = [gc_task()]
         
+        # Add LoRa transmission worker task
+        additional_tasks.append(lora_interface.transmission_worker())
+        print("[Main] LoRa transmission worker will start")
+        
         # Add web server task if WiFi is connected and enabled
         if wlan and "web_server" in config and config["web_server"].get("enabled", False):
             port = config["web_server"].get("port", 80)

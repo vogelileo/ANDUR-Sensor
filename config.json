@@ -65,33 +65,6 @@
         "scale_factor": 1.0
       },
       "enabled": true
-    },
-    {
-      "id": "adaptive_indoor",
-      "type": "adaptive_threshold",
-      "sensor_id": "microwave_sensor_1",
-      "check_interval": 0.2,
-      "params": {
-        "initial_baseline": 1000.0,
-        "threshold_margin": 500.0,
-        "adaptation_rate": 0.05,
-        "streak_required": 3
-      },
-      "enabled": true
-    },
-    {
-      "id": "energy_robust",
-      "type": "energy_hysteresis",
-      "sensor_id": "microwave_sensor_1",
-      "check_interval": 0.2,
-      "params": {
-        "activation_threshold": 3000.0,
-        "confirmation_threshold": 4500.0,
-        "deactivation_threshold": 2000.0,
-        "confirmation_samples": 6,
-        "cooldown_samples": 8
-      },
-      "enabled": true
     }
   ],
   "lora": {

@@ -268,10 +268,13 @@ class BaseAlgorithm:
             
             debug_print("[ALGO LORA]", f"Payload prepared: device_id={self.sensor_mac}, {len(sensor_data)} sensors")
             
-            # Send via LoRa (not async, don't use await)
-            debug_print("[ALGO LORA]", "Sending via LoRa interface...")
-            self.lora_interface.send(payload)
-            debug_print("[ALGO LORA]", f"LoRa message sent successfully")
+            # Send via LoRa (non-blocking enqueue, returns immediately)
+            debug_print("[ALGO LORA]", "Enqueuing payload for transmission...")
+            success = self.lora_interface.send(payload)
+            if success:
+                debug_print("[ALGO LORA]", "Payload enqueued successfully (transmission will happen in background)")
+            else:
+                debug_print("[ALGO LORA]", "Failed to enqueue payload (queue may be full)")
             
         except Exception as e:
             print(f"[ALGO LORA ERROR] Exception sending LoRa: {e}")
